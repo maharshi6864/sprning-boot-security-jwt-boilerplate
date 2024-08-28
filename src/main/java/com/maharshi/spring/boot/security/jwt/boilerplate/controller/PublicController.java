@@ -1,11 +1,16 @@
 package com.maharshi.spring.boot.security.jwt.boilerplate.controller;
 
+
+import com.maharshi.spring.boot.security.jwt.boilerplate.dto.Response;
 import com.maharshi.spring.boot.security.jwt.boilerplate.model.User;
+import com.maharshi.spring.boot.security.jwt.boilerplate.service.RegisterUserService;
 import com.maharshi.spring.boot.security.jwt.boilerplate.service.UserDetailsServiceImp;
-import com.maharshi.spring.boot.security.jwt.boilerplate.service.UserService;
 import com.maharshi.spring.boot.security.jwt.boilerplate.utils.JwtUtil;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -13,11 +18,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/public")
+@CrossOrigin(origins = "http://localhost:5173")
 public class PublicController {
 
     @Autowired
-    private UserService userService;
+    private RegisterUserService registerUserService;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -31,36 +36,49 @@ public class PublicController {
     @Autowired
     private JwtUtil jwtUtil;
 
-    @PostMapping("/register")
-    public String register(@RequestBody User user) {
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
-        userService.insertUser(user);
-        return "registered successfully";
+    @GetMapping("/logoutt")
+    public ResponseEntity<Response> serverHealthCheck(HttpServletResponse response)
+    {
+        // Create a cookie with the same name to delete it
+        ResponseCookie deleteCookie = ResponseCookie.from("Authentication", "")
+                .httpOnly(true)
+                .secure(true) // Use true if using HTTPS
+                .path("/") // Ensure this matches the path of the original cookie
+                .maxAge(0) // Expire the cookie immediately
+                .sameSite("Strict") // Match SameSite attribute
+                .build();
+
+        // Add the delete cookie to the response
+        response.addHeader(HttpHeaders.SET_COOKIE, deleteCookie.toString());
+        return new ResponseEntity<Response>(new Response("Logout Successfully",null,true),HttpStatus.OK);
     }
 
     @PostMapping("/login")
-    public ResponseEntity<String> login(@RequestBody User user) {
+    public ResponseEntity<Response> login(@RequestBody User user, HttpServletResponse response) {
         try {
             this.authenticationManager
                     .authenticate(new UsernamePasswordAuthenticationToken(user.getUsername(), user.getPassword()));
             String username = this.userDetailsServiceImp.loadUserByUsername(user.getUsername()).getUsername();
-            String jwt = jwtUtil.generateToken(username);
-            return new ResponseEntity<>(jwt, HttpStatus.OK);
+            String jwt = "Bearer" + jwtUtil.generateToken(username);
+
+
+
+            ResponseCookie jwtCookie = ResponseCookie.from("Authentication", jwt)
+                    .httpOnly(true)
+                    .secure(false) // Use this if your app is served over HTTPS
+                    .path("/")
+                    .maxAge(24 * 60 * 60) // Set cookie expiration time
+                    .sameSite("Strict") // SameSite attribute for CSRF protection
+                    .build();
+            response.addHeader(HttpHeaders.SET_COOKIE, jwtCookie.toString());
+
+            return new ResponseEntity<>(new Response("Valid User Name and password", username, true), HttpStatus.OK);
         } catch (Exception e) {
             e.printStackTrace();
-            return new ResponseEntity<>("Username or password invalid.", HttpStatus.BAD_REQUEST);
+            return new ResponseEntity<>(new Response("Username or password invalid.", null, false), HttpStatus.BAD_REQUEST);
         }
     }
 
-    @GetMapping("/home")
-    public String user() {
-        return "user is maharshi";
-    }
 
-    @PostMapping("/find")
-    public String find(@RequestBody User user) {
-        System.out.println("Reached till controller !!");
-        return this.userService.findByUserName(user.getUsername()).getUsername();
-    }
 
 }
